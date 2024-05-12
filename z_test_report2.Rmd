@@ -1,0 +1,105 @@
+---
+title: "Color print Reactable"
+output: 
+  html_document
+date: '2022-09-06'
+---
+
+<BR><BR>
+I would like to be able to color print this table.
+<BR><BR>
+
+## My data table
+
+```{css, echo=FALSE}
+
+.rt-tr-header {
+  margin-top: 1.5rem;
+  padding: 0.5rem;
+  background-color: #ebe9e9;
+  color: #353735;
+}
+
+
+@media print {
+  .fa-star, :after, :before {
+      
+  }
+  
+  .rt-tr {
+    
+  }
+  
+}
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+library(dplyr)
+library(reactable)
+library(shiny)
+library(tippy)
+library(htmltools)
+
+# Emphasize borders between groups when sorting by group
+group_border_style = JS("function(rowInfo, state) { 
+  const firstSorted = state.sorted[0]
+  if (firstSorted && firstSorted.id === 'School') {
+      const nextRow = state.pageRows[rowInfo.viewIndex + 1]
+	  if (nextRow && rowInfo.values['School'] !== nextRow['School']) 
+                        return { boxShadow: 'inset 0px -1px #69BE28' }}}" )
+
+## Merge border style
+merge_style = JS("function(rowInfo, column, state) {
+	const firstSorted = state.sorted[0]
+	if (!firstSorted || firstSorted.id === 'School') {
+		const prevRow = state.pageRows[rowInfo.viewIndex - 1]
+		if (prevRow && rowInfo.values['School'] === prevRow['School']) {
+			return { visibility: 'hidden' } }}}")
+
+## Function for star ratings
+rating_stars <- function(rating, max_rating = 5) {
+  star_icon <- function(empty = FALSE) {
+    tagAppendAttributes(shiny::icon("star"),
+                        style = paste("color:", if (empty) "#edf0f2" else "orange"),
+                        "aria-hidden" = "true"
+    )
+  }
+  rounded_rating <- floor(rating + 0.5)  # always round up
+  stars <- lapply(seq_len(max_rating), function(i) {
+    if (i <= rounded_rating) star_icon() else star_icon(empty = TRUE)
+  })
+  label <- sprintf("%s out of %s stars", rating, max_rating)
+  div(title = label, role = "img", stars)
+}
+
+## Data
+data <- as_tibble(MASS::painters, rownames = "Painter") %>%
+  filter(School %in% c("A", "B", "C")) %>%
+  mutate(School = recode(School, A = "Renaissance", B = "Mannerist", C = "Seicento")) %>%
+  select(Painter, School, Composition,Drawing, Colour) %>%
+  group_by(School) %>%
+  slice(1:3) %>% 
+  ungroup() %>% 
+  mutate(ratings = sample(1:5, 9, replace = T)) %>% 
+  select(ratings, everything())
+
+reactable(data,
+          
+          width = 650,
+          borderless = TRUE, showSortIcon = FALSE,
+          rowStyle = group_border_style,
+          defaultSorted = list(School = "asc", Drawing = "desc"),
+          
+          style = list(fontFamily = "Work Sans, sans-serif", fontSize = "0.875rem"),
+          
+          columns = list( 
+            ratings = colDef(cell = function(ratings) rating_stars(ratings)),
+            School = colDef(style = merge_style)
+          ))
+```
+
+
+
+

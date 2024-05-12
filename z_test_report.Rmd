@@ -1,0 +1,216 @@
+---
+title: "Color print Reactable"
+output: 
+  html_document:
+    template: system.file('rmd/h/default.html',package = "rmarkdown")
+
+date: '2022-09-06'
+---
+
+<BR><BR>
+I would like to be able to color print this table.
+<BR><BR>
+
+## My data table
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+library(dplyr)
+library(reactable)
+library(shiny)
+library(tippy)
+library(htmltools)
+
+# Emphasize borders between groups when sorting by group
+group_border_style = JS("function(rowInfo, state) { 
+  const firstSorted = state.sorted[0]
+  if (firstSorted && firstSorted.id === 'School') {
+      const nextRow = state.pageRows[rowInfo.viewIndex + 1]
+	  if (nextRow && rowInfo.values['School'] !== nextRow['School']){ 
+      return { opacity: '1'}
+	  }else{
+      return { Opacity: '0.999'};
+    }
+  }}" )
+
+## Merge border style
+merge_style = JS("function(rowInfo, column, state) {
+	const firstSorted = state.sorted[0]
+	if (!firstSorted || firstSorted.id === 'School') {
+		const prevRow = state.pageRows[rowInfo.viewIndex - 1]
+		if (prevRow && rowInfo.values['School'] === prevRow['School']) {
+			return { visibility: 'hidden' } }}}")
+
+## Function for star ratings
+rating_stars <- function(rating, max_rating = 5) {
+  star_icon <- function(empty = FALSE) {
+    tagAppendAttributes(shiny::icon("star"),
+                        style = paste("color:", if (empty) "#edf0f2" else "orange"),
+                        "aria-hidden" = "true"
+    )
+  }
+  rounded_rating <- floor(rating + 0.5)  # always round up
+  stars <- lapply(seq_len(max_rating), function(i) {
+    if (i <= rounded_rating) star_icon() else star_icon(empty = TRUE)
+  })
+  label <- sprintf("%s out of %s stars", rating, max_rating)
+  div(title = label, role = "img", stars)
+}
+
+## Data
+data <- as_tibble(MASS::painters, rownames = "Painter") %>%
+  filter(School %in% c("A", "B", "C")) %>%
+  mutate(School = recode(School, A = "Renaissance", B = "Mannerist", C = "Seicento")) %>%
+  select(Painter, School, Composition,Drawing, Colour) %>%
+  group_by(School) %>%
+  slice(1:3) %>% 
+  ungroup() %>% 
+  mutate(ratings = sample(1:5, 9, replace = T)) %>% 
+  select(ratings, everything())
+
+output_table <- reactable(data,
+          
+          width = 650,
+          borderless = TRUE, showSortIcon = FALSE,
+          rowStyle = group_border_style,
+          defaultSorted = list(School = "asc", Drawing = "desc"),
+          
+          style = list(fontFamily = "Work Sans, sans-serif", fontSize = "0.875rem"),
+          
+          columns = list( 
+            ratings = colDef(cell = function(ratings) rating_stars(ratings)),
+            School = colDef(style = merge_style)
+          ),
+          elementId = 'FVI_Table')
+
+output_table
+```
+
+<script>
+
+function setupColouring(){
+
+  //I use a little 'trick' here. When the rows are ordered by school, the relevant
+  //class tags will have opacity: 1 set as a css style. Opacity 1 does nothing
+  //overly useful here, but it is a useful way to identify which rows need the
+  //boxShadow style. 
+  var rows = document.querySelectorAll('.rt-tr');
+  
+  // Expands the array so we can run forEach across it
+  [...rows].forEach((row) => {
+  
+    // Check if the opacity value is set. If it is, then add the box-shaodw.
+    // Note: I do it like this because reactable only triggers a style event
+    // change when modifying row order. Opacity: 1 is a non-destructive css
+    // change. 
+    
+    if (row.style.getPropertyValue('opacity') == '1'){
+    
+    // Add the box shadow rule with the priority important
+      // To my knowledge, there is no alternative way to make css styles show in
+      // colour printing
+      row.style.setProperty('box-shadow', '#69BE28 0px -1px inset', 'important');
+    }
+    
+  });
+  
+  //Initiate the stars to have the important priority.
+  
+  var stars = document.querySelectorAll('.fa-star');
+  
+  [...stars].forEach((star) => {
+    star.style.setProperty('color', star.style.getPropertyValue('color'),'important');
+  });
+  
+  
+  
+  Observe(".rt-tr", {
+    attributesList: ["style"], 
+    attributeOldValue: true,
+  }, (m) => {
+      
+      // We change the css property using setProperty. This is necessary to add the
+      // important priority.
+      if (m.target.style.getPropertyValue('Opacity') == '1'){
+        m.target.style.setProperty('box-shadow', '#69BE28 0px -1px inset', 'important');
+      }else{
+        m.target.style.removeProperty('box-shadow');
+      }
+      
+  
+  })  
+  
+  Observe(".fa-star", {
+    attributesList: ["style"], 
+    attributeOldValue: true,
+  }, (m) => {
+      
+      // We change the css property using setProperty. This is necessary to add the
+      // important priority.
+      
+      m.target.style.setProperty('color', m.target.style.getPropertyValue('color'), 'important');
+      
+      //if (m.target.style.getPropertyValue('color') == 'orange'){
+      //  m.target.style.setProperty('color','orange','important');
+      //}else{
+      //  m.target.style.setProperty('color',"#edf0f2",'important');
+      //}
+      
+  
+  })    
+}
+
+// I use a mutation observer to listen for changes in style. See here:
+// https://stackoverflow.com/questions/54639719/mutationobserver-watching-for-style-change-only-firing-once
+
+/**
+ * Mutation Observer Helper function
+ * //developer.mozilla.org/en-US/docs/Web/API/MutationObserver/observe
+ * @param {string} sel The DOM selector to watch 
+ * @param {object} opt MutationObserver options 
+ * @param {function} cb Pass Mutation object to a callback function
+ */
+
+// Creates an Observer to observe attribute changes in elements
+const Observe = (sel, opt, cb) => {
+  const Obs = new MutationObserver((m) => [...m].forEach(cb));
+  document.querySelectorAll(sel).forEach(el => Obs.observe(el, opt));
+};
+
+// We run the function setupColouring, 50 milliseconds after the page has loaded.
+// This gives the table a chance to load. The function setups the style rules and
+// puts the observers in place.
+window.addEventListener("load", function () {
+    setTimeout(setupColouring(), 50);
+}, false);
+
+
+</script>
+
+```{css, echo=FALSE}
+
+.rt-tr-header {
+  margin-top: 1.5rem;
+  padding: 0.5rem;
+  background-color: #ebe9e9 !important;
+  color: #353735 !important;
+}
+
+@media print {
+  .fa-star, :after, :before {
+      color: inherit !important;
+  }
+  
+  .rt-tr {
+    box-shadow: inherit;
+    background-color: inherit;
+  }
+  
+}
+
+```
+
+
+
+
